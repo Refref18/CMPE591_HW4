@@ -231,7 +231,7 @@ def prepare_batch(states_arr, n_batch=1):
 if __name__ == "__main__":
     env = Hw5Env(render_mode="offscreen")
     states_arr = []
-    for i in range(100):
+    for i in range(1000):
         env.reset()
         p_1 = np.array([0.5, 0.3, 1.04])
         p_2 = np.array([0.5, 0.15, np.random.uniform(1.04, 1.4)])
@@ -258,7 +258,7 @@ if __name__ == "__main__":
         ax[1].set_xlabel("o_y")
         ax[1].set_ylabel("o_z")
     plt.show()
-    """# Her trajectory'den 10 örnek göster
+    # Her trajectory'den 10 örnek göster
     for traj_id, states in enumerate(states_arr):
         T = states.shape[0]
         t_vals = np.linspace(0, 1, T).reshape(-1, 1)  # t: 0 → 1 arası
@@ -268,7 +268,7 @@ if __name__ == "__main__":
         sample_idxs = np.linspace(0, T - 1, 10, dtype=int)  # 10 eşit aralıklı nokta al
         for idx in sample_idxs:
             t, ey, ez, oy, oz, h = full_traj[idx]
-            print(f"  t={t:.2f}, ey={ey:.3f}, ez={ez:.3f}, oy={oy:.3f}, oz={oz:.3f}, h={h:.3f}")"""
+            print(f"  t={t:.2f}, ey={ey:.3f}, ez={ez:.3f}, oy={oy:.3f}, oz={oz:.3f}, h={h:.3f}")
         
     # ------------------------------------------------------------
     # 1) Modeli tanımla
@@ -295,7 +295,7 @@ if __name__ == "__main__":
         if epoch % 50 == 0 or epoch == 1:
             print(f"[{epoch}/{n_epochs}]  NLL loss: {loss.item():.4f}")
 
-    # ------------------------------------------------------------
+    """# ------------------------------------------------------------
     # 3) Test – toplam 5 nokta seçip tahmin et
     # ------------------------------------------------------------
     test_traj = states_arr[np.random.randint(len(states_arr))]
@@ -335,7 +335,7 @@ if __name__ == "__main__":
         ax.legend(loc="best")
 
     plt.tight_layout()
-    plt.show()
+    plt.show()"""
 
 
     # ------------------------------------------------------------
@@ -345,7 +345,7 @@ if __name__ == "__main__":
     mse_end_list = []
     mse_obj_list = []
 
-    for _ in range(n_tests):
+    for x_test in range(n_tests):
         # --- 5.1 Generate one fresh trajectory ---
         env.reset()
         # pick 4 control points (varying the middle two randomly)
@@ -368,27 +368,30 @@ if __name__ == "__main__":
         full_traj = np.concatenate([t_vals, states], axis=1)  # [T, 6]
 
         # --- 5.3 Random context/target split ---
-        idxs      = np.random.permutation(T)
-        n_context = np.random.randint(3, T//2)
-        n_target  = np.random.randint(3, T - n_context)
-        obs_idx   = idxs[:n_context]
-        tgt_idx   = idxs[n_context:n_context + n_target]
+        idxs    = np.random.permutation(T)
+        """tgt_idx = idxs[:5]
+        obs_idx = idxs[5:]
+        """
 
-        # --- 5.4 Extract arrays and convert to batch‐shape tensors ---
-        obs_np    = full_traj[obs_idx]                  # [N_ctx, 6]
-        tx_np     = full_traj[tgt_idx][:, [0,5]]        # [N_tgt, 2]
-        ty_np     = full_traj[tgt_idx][:, 1:5]          # [N_tgt, 4]
+        n_context = np.random.randint(3, T // 2)
+        n_target = np.random.randint(3, T - n_context)
 
-        obs_tensor    = torch.tensor(obs_np, dtype=torch.float32).unsqueeze(0)   # [1, N_ctx, 6]
-        target_x_tensor = torch.tensor(tx_np, dtype=torch.float32).unsqueeze(0)  # [1, N_tgt, 2]
-        target_y_tensor = torch.tensor(ty_np, dtype=torch.float32).unsqueeze(0)  # [1, N_tgt, 4]
+        obs_idx = idxs[:n_context]
+        tgt_idx = idxs[n_context:n_context + n_target]
 
-        # --- 5.5 Predict on this fresh batch ---
+        obs_np          = full_traj[obs_idx]                  # [T‑5,6]
+        tx_np           = full_traj[tgt_idx][:, [0,5]]       # [5,2]
+        ty_np           = full_traj[tgt_idx][:, 1:5]         # [5,4]
+
+        obs_tensor      = torch.tensor(obs_np, dtype=torch.float32).unsqueeze(0)   
+        target_x_tensor = torch.tensor(tx_np, dtype=torch.float32).unsqueeze(0)  
+        target_y_tensor = torch.tensor(ty_np, dtype=torch.float32).unsqueeze(0)  
+
         with torch.no_grad():
             pred_mean, _ = cnp(obs_tensor, target_x_tensor)
 
-        pred = pred_mean.squeeze(0).numpy()    # [N_tgt, 4]
-        true = ty_np                           # [N_tgt, 4]
+        pred = pred_mean.squeeze(0).numpy()  # [5,4]
+        true = ty_np                         # [5,4]                         # [N_tgt, 4]
 
         # --- 5.6 Compute MSE separately ---
         se = (pred - true)**2
@@ -412,7 +415,7 @@ if __name__ == "__main__":
             ax.grid(True)
             ax.legend(loc="best")
         plt.tight_layout()
-        plt.show()
+        plt.savefig(f"results/test_{x_test+1}.png")
 
     # ------------------------------------------------------------
     # 6) Bar plot of mean MSE ± std over these 100 fresh tests
@@ -433,4 +436,4 @@ if __name__ == "__main__":
     ax.set_title("CNP MSE on 100 Randomly Generated Trajectories")
     ax.grid(True, axis="y")
     plt.tight_layout()
-    plt.show()
+    plt.savefig("results/mse.png")

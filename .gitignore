@@ -1,0 +1,6 @@
+.DS_Store
+__pycache__
+.vscode
+src/data
+src/results
+src/results_simple_loss
