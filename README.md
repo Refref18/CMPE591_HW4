@@ -73,6 +73,8 @@ This repository implements a **Conditional Neural Process (CNP)** to predict a r
 
 ## Results & Insights
 
+![MSE Bar Plot](src/results/mse.png)
+
 - The model captures the general trend of the end‑effector trajectory with moderate accuracy.
 - Small object displacements are predicted within the uncertainty bands.
 - End‑effector errors exhibit higher variance due to more complex motion patterns.
