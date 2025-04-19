@@ -77,7 +77,7 @@ This repository implements a **Conditional Neural Process (CNP)** to predict a r
 
 - The model captures the general trend of the end‑effector trajectory with moderate accuracy.
 - Small object displacements are predicted within the uncertainty bands.
-- End‑effector errors exhibit higher variance due to more complex motion patterns.
+- End‑effector errors exhibit higher variance due to more complex motion patterns when the object falls.
 
 ---
 
