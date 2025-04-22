@@ -2,12 +2,15 @@ import torch
 import torchvision.transforms as transforms
 import numpy as np
 import matplotlib.pyplot as plt
-
+import random
 import environment
 import os 
-import random
+
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
+# Create test_results folder if it does not exist
+if not os.path.exists("test_results"):
+    os.makedirs("test_results")
 class CNP(torch.nn.Module):
     def __init__(self, in_shape, hidden_size, num_hidden_layers, min_std=0.1):
         super(CNP, self).__init__()
@@ -193,6 +196,23 @@ def bezier(p, steps=100):
     curve = np.power(1-t, 3)*p[0] + 3*np.power(1-t, 2)*t*p[1] + 3*(1-t)*np.power(t, 2)*p[2] + np.power(t, 3)*p[3]
     return curve
 
+def make_batch_with_indices(traj, max_context, max_target):
+    L = traj.shape[0]
+    n_c = random.randint(1, min(max_context, L))
+    n_t = 1
+    idx_perm = np.random.permutation(L)
+    idx_c = np.sort(idx_perm[:n_c])
+    idx_t = np.sort(idx_perm[n_c:n_c + n_t])
+
+    obs_np   = traj[idx_c]        # (n_c, 6)
+    targ_np  = traj[idx_t][:, [0, 5]]
+    truth_np = traj[idx_t, 1:5]   # (n_t, 4)
+
+    obs = torch.from_numpy(obs_np).float().unsqueeze(0)
+    targ = torch.from_numpy(targ_np).float().unsqueeze(0)
+    truth = torch.from_numpy(truth_np).float().unsqueeze(0)
+    return obs, targ, truth, idx_c, idx_t
+
 def make_batch(traj, max_context, max_target ):
     """
     traj: np.array (L,6): [t, ey, ez, oy, oz, h]
@@ -221,16 +241,16 @@ def make_batch(traj, max_context, max_target ):
     truth = torch.from_numpy(truth_np).float().unsqueeze(0)
     return obs, targ, truth
 
-
 if __name__ == "__main__":
     env = Hw5Env(render_mode="offscreen")
+    #    d_x = 2 (t and h), d_y = 4 (ey, ez, oy, oz)
     d_x, d_y = 2, 4
 
     hidden_size       = 128
     num_hidden_layers = 3
     lr                = 5e-5
     
-    
+    n_context = random.randint(1, 10)
     n_target  = 1
 
     model = CNP(
@@ -243,28 +263,32 @@ if __name__ == "__main__":
     # Optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     states_arr = []
-    num_trajectories = 10
+    num_trajectories = 100
 
     # Collect data
-    for i in range(10):
+    for i in range(num_trajectories):
+        
         env.reset()
-        p_1 = np.array([0.5, 0.3, 1.04])
-        p_2 = np.array([0.5, 0.15, np.random.uniform(1.04, 1.4)])
-        p_3 = np.array([0.5, -0.15, np.random.uniform(1.04, 1.4)])
-        p_4 = np.array([0.5, -0.3, 1.04])
-        points = np.stack([p_1, p_2, p_3, p_4], axis=0)
-        curve = bezier(points)
+        p1 = np.array([0.5,  0.3, 1.04])
+        p2 = np.array([0.5,  0.15, np.random.uniform(1.04, 1.4)])
+        p3 = np.array([0.5, -0.15, np.random.uniform(1.04, 1.4)])
+        p4 = np.array([0.5, -0.3, 1.04])
+        points = np.stack([p1, p2, p3, p4], axis=0)
+        curve  = bezier(points)    # shape (L,3)
 
-        env._set_ee_in_cartesian(curve[0], rotation=[-90, 0, 180], n_splits=100, max_iters=100, threshold=0.05)
+        env._set_ee_in_cartesian(curve[0],
+                                rotation=[-90,0,180],
+                                n_splits=100, max_iters=100, threshold=0.05)
         states = []
         for p in curve:
-            env._set_ee_pose(p, rotation=[-90, 0, 180], max_iters=10)
-            states.append(env.high_level_state())
-        states = np.stack(states)
-        states_arr.append(states)
-        print(f"Collected {i+1} trajectories.", end="\r")
+            env._set_ee_pose(p, rotation=[-90,0,180], max_iters=10)
+            hl = env.high_level_state()   # → np.array([ey, ez, oy, oz, h])
+            states.append(hl)
 
-    
+        states = np.stack(states)  
+        states_arr.append(states)
+
+        print(f"Collected {i+1}/{num_trajectories} trajectories.", end="\r")
     # 1) Convert each (L×5) states array into an (L×6) trajectory:
     trajectories = []
     for states in states_arr:
@@ -280,13 +304,12 @@ if __name__ == "__main__":
         traj = np.concatenate([t, states[:, 0:4], h_col], axis=1)
         #print(traj[0])
         trajectories.append(traj)                 # now traj.shape == (L,6)
-        n_context = random.randint(1, 10)
-        obs, targ, truth = make_batch(traj, n_context, n_target)
+    
     print("Built", len(trajectories), "trajectories with time+height.")
     # --- TRAINING LOOP ---
-    n_epochs = 1000
+    n_epochs = 100000
 
-    batch_size = 2
+    batch_size = 32
 
     for epoch in range(1, n_epochs+1):
         model.train()
@@ -298,7 +321,6 @@ if __name__ == "__main__":
 
         # 2) build each context/target
         for traj in batch_trajs:
-            n_context = 20
             obs, targ, truth = make_batch(traj, n_context, n_target)
             obs_list.append(obs)       # each is shape (1, n_c, d_x+d_y)
             targ_list.append(targ)     # each is shape (1, n_t, d_x)
@@ -309,7 +331,7 @@ if __name__ == "__main__":
         obs_batch   = torch.cat(obs_list,   dim=0)
         targ_batch  = torch.cat(targ_list,  dim=0)
         truth_batch = torch.cat(truth_list, dim=0)
-    
+
         # 4) single forward/backward on the whole batch
         loss = model.nll_loss(obs_batch, targ_batch, truth_batch)
         optimizer.zero_grad()
@@ -332,16 +354,103 @@ if __name__ == "__main__":
             n_t_rand = n_target   
 
             obs, targ, truth = make_batch(traj, n_c_rand, n_t_rand)
-            #print(obs, targ, truth)
+
             mean, _ = model(obs, targ)
             pred = mean.squeeze(0).cpu().numpy()
             gt   = truth.squeeze(0).cpu().numpy()
-            #print(pred, gt)
+
             mse_e.append(np.mean((pred[:, :2] - gt[:, :2])**2))
             mse_o.append(np.mean((pred[:, 2:] - gt[:, 2:])**2))
+
     # ortalama ve sapma
     mean_e, std_e = np.mean(mse_e), np.std(mse_e)
     mean_o, std_o = np.mean(mse_o), np.std(mse_o)
-
+    
     print(f"End‑Effector MSE: {mean_e:.5f} ± {std_e:.5f}")
     print(f"Object        MSE: {mean_o:.5f} ± {std_o:.5f}")
+
+    # 4) Bar plot
+    plt.figure()
+    plt.bar(
+        ["End‑Effector","Object"],
+        [mean_e, mean_o],
+        yerr=[std_e, std_o],
+        capsize=5
+    )
+    plt.ylabel("MSE")
+    plt.title("100‑Test Mean ± Std MSE")
+    plt.show()
+
+    # Plot 100 tests
+    for test_i in range(100):
+        traj = random.choice(trajectories)
+        obs, targ, truth, idx_c, idx_t = make_batch_with_indices(traj, max_context, n_target)
+
+        model.eval()
+        with torch.no_grad():
+            mean, _ = model(obs, targ)
+        pred = mean.squeeze(0).cpu().numpy()      # (n_t, 4)
+        gt = truth.squeeze(0).cpu().numpy()       # (n_t, 4)
+
+        # For plotting, take only the first target (since n_t=1)
+        tc = idx_c  # context indices
+        tt = idx_t[0]  # target index
+        pred_e_y, pred_e_z, pred_o_y, pred_o_z = pred[0]
+        gt_e_y,   gt_e_z,   gt_o_y,   gt_o_z = gt[0]
+
+        # Create figure
+        fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+
+        # 1) End‑effector: show full trajectory as gray points
+        axes[0].scatter(
+            traj[:,1], traj[:,2],
+            c='lightgray', alpha=0.3, s=10, label='Full Trajectory'
+        )
+        # then overplot the line if you like
+        axes[0].plot(traj[:,1], traj[:,2], 'k-', alpha=0.2)
+        # context
+        axes[0].scatter(
+            traj[tc,1], traj[tc,2],
+            c='blue', label='Context'
+        )
+        # true
+        axes[0].scatter(
+            traj[tt,1], traj[tt,2],
+            c='green', label='True Target'
+        )
+        # predicted
+        axes[0].scatter(
+            pred_e_y, pred_e_z,
+            c='red', marker='x', s=100, label='Predicted'
+        )
+        axes[0].set_title(f"Test {test_i+1} — End‑Effector")
+        axes[0].set_xlabel("e_y")
+        axes[0].set_ylabel("e_z")
+        axes[0].legend()
+
+        # 2) Object: same pattern
+        axes[1].scatter(
+            traj[:,3], traj[:,4],
+            c='lightgray', alpha=0.3, s=10, label='Full Trajectory'
+        )
+        axes[1].plot(traj[:,3], traj[:,4], 'k-', alpha=0.2)
+        axes[1].scatter(
+            traj[tc,3], traj[tc,4],
+            c='blue', label='Context'
+        )
+        axes[1].scatter(
+            traj[tt,3], traj[tt,4],
+            c='green', label='True Target'
+        )
+        axes[1].scatter(
+            pred_o_y, pred_o_z,
+            c='red', marker='x', s=100, label='Predicted'
+        )
+        axes[1].set_title(f"Test {test_i+1} — Object")
+        axes[1].set_xlabel("o_y")
+        axes[1].set_ylabel("o_z")
+        axes[1].legend()
+
+        plt.tight_layout()
+        plt.savefig(f"test_results/test_{test_i+1}.png")
+
