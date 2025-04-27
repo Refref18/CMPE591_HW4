@@ -379,6 +379,7 @@ if __name__ == "__main__":
     )
     plt.ylabel("MSE")
     plt.title("100‑Test Mean ± Std MSE")
+    plt.savefig("test_results/mse_bar.png")
     plt.show()
 
     # Plot 100 tests
