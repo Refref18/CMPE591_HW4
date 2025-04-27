@@ -47,3 +47,6 @@ This repository implements a **Conditional Neural Process (CNP)** for few-shot r
 
 - **Results Directory:**  
 [MSE Bar Plot](src/test_results/mse_bar.png)
+[Example Test Result](src/test_results/test_18.png)
+
+_All plots and logs are saved under the `src/test_results/` directory._
