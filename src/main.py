@@ -348,9 +348,7 @@ if __name__ == "__main__":
         for _ in range(100):
             traj = random.choice(trajectories)
             
-            # her seferinde 1 ile 200 arasında rastgele context
             n_c_rand = random.randint(1, max_context)
-            # target sayısı hâlâ istediğin sabit (örneğin 1) kalabilir
             n_t_rand = n_target   
 
             obs, targ, truth = make_batch(traj, n_c_rand, n_t_rand)
